@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<!-- Required meta tags -->
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+		<title>Test video player</title>
+		<link rel="shortcut icon" type="image/png" href="image/favicon.png"/>
+	</head>
+	<style>
+	body{
+	background-color:black;
+	}
+#container{
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin-top: -50px;
+    margin-left: -50px;
+    width: 100px;
+    height: 100px;
+}​	</style>
+	<body>
+	
+
+		<div id="video-container">
+
+		</div>
+
+
+	<script src="https://code.jquery.com/jquery-3.3.1.min.js" integrity="sha384-tsQFqpEReu7ZLhBV2VZlAu7zcOV+rXbYlF2cqB8txI/8aZajjp4Bqd+V6D5IgvKT" crossorigin="anonymous"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+	<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>	
+		
+	<script>
+		// var URL_BASE = "http://192.168.137.1:3000/";
+		var URL_BASE = "https://www.handyfeeling.com/";
+		var URL_API_ENDPOINT = "api/v1/";
+		
+		
+		/*
+			sync time with server
+		*/
+		let timeSyncMessage = 0;
+		let timeSyncAggregatedOffset = 0;
+		let timeSyncAvrageOffset = 0;
+		let timeSyncInitialOffset = 0;
+
+		function getServerTime(){
+			let serverTimeNow = Date.now() + timeSyncAvrageOffset + timeSyncInitialOffset;
+			return Math.round(serverTimeNow);
+		}
+
+		function updateServerTime() {
+			let sendTime = Date.now();
+			let url = urlAPI + "/getServerTime";
+			// console.log("url:",url);
+			$.ajax({url: url, success: function(result){
+				// console.log(result);
+				let now = Date.now();
+				let receiveTime = now;
+				let rtd = receiveTime - sendTime;
+				let serverTime = result.serverTime;
+				let estimatedServerTimeNow = serverTime + rtd /2;
+				let offset = 0;
+				if(timeSyncMessage == 0){
+					timeSyncInitialOffset = estimatedServerTimeNow - now;
+					console.log("timeSyncInitialOffset:",timeSyncInitialOffset);
+				}else{
+					offset = estimatedServerTimeNow - receiveTime- timeSyncInitialOffset;
+            		timeSyncAggregatedOffset += offset;
+            		timeSyncAvrageOffset = timeSyncAggregatedOffset / timeSyncMessage;
+				}
+				console.log("Time sync reply nr " + timeSyncMessage + " (rtd, this offset, avrage offset):",rtd,offset,timeSyncAvrageOffset);
+				timeSyncMessage++;
+				if(timeSyncMessage < 30){
+					updateServerTime();
+				}else{
+					//Time in sync
+					console.log("Server time in sync. Avrage offset from client time: " + Math.round(timeSyncAvrageOffset) + "ms"); 
+				}
+  			}});
+			
+		}
+		
+		
+		/*
+			Input params from the URL
+		*/
+		//Test video: https://s3-eu-central-1.amazonaws.com/sweettecheu/videos/admin/dataset1_v2_converted.mp4
+		//Test script: "https://sweettecheu.s3.eu-central-1.amazonaws.com/scripts/admin/dataset+(2)_fix_150420.csv"
+
+		let videoUrl = qs("videourl");
+		let scriptUrl = qs("scripturl");
+		let connectionkey = qs("key");
+		let fps = qs("fps");
+		let format = qs("format");
+		if(fps === null){
+			fps = 30;
+		}
+		if(format === null){
+			format = "MONO_FLAT";
+		}
+		console.log(videoUrl, scriptUrl,connectionkey,fps,format);
+
+		//Set the params to the HTML list
+
+
+		/*
+			Parse url params function
+			Credits: https://stackoverflow.com/questions/7731778/get-query-string-parameters-url-values-with-jquery-javascript-querystring
+		*/
+		function qs(key) {
+			key = key.replace(/[*+?^$.\[\]{}()|\\\/]/g, "\\$&"); // escape RegEx meta chars
+			var match = location.search.match(new RegExp("[?&]"+key+"=([^&]+)(&|$)"));
+			return match && decodeURIComponent(match[1].replace(/\+/g, " "));
+		}
+
+
+		/*
+			Init sequence
+		*/
+		var urlAPI = URL_BASE + URL_API_ENDPOINT + connectionkey;
+		updateServerTime(); //Strat time sync with teh server
+
+		//Prepare Handy by telling it where to download the script
+		$.ajax({url: urlAPI + "/syncPrepare", data:{ url: scriptUrl, timeout: 30000}, success: function(result){
+    		console.log(result);
+		}});
+		  
+		//Prepare VR video player (must been done after all params are known)
+		let videoElement = '<video controls id="video-player" ';
+		videoElement += 'format="' + format + '" ';
+		videoElement += 'fps="' + fps+ '" ';
+		videoElement += '"crossorigin="anonymous" style="min-height: 300px;height:100%" onload=""><meta name="dl8-customization-no-brand-watermark-logo"><meta name="dl8-customization-no-brand-logo"><meta name="dl8-customization-no-content-badge"><source id="video-src" src="';
+		videoElement += videoUrl + '" type="video/mp4"/></video>';
+		document.getElementById("video-container").innerHTML = videoElement;
+		setTimeout(() => { //Give a sec to add the player to the DOM
+			registerVideoPlayer();
+		}, 1000);
+		
+
+		/*
+			Player logic
+		*/
+		function registerVideoPlayer(){
+			console.log("Registrating video player");
+			var video = document.getElementById("video-player");
+			//Add event listner to intersept play/pause event.
+			video.addEventListener('playing', ()=> {
+				console.log("playing");
+				let videoTime = Math.round(video.currentTime*1000);
+				console.log("playing",videoTime);
+				$.ajax({url: urlAPI + "/syncPlay", data:{ 
+					play: true,
+					serverTime: getServerTime(),
+					time: videoTime
+				}, success: function(result){
+					console.log(result);
+				}});
+			});
+			video.addEventListener('pause', ()=> {
+				console.log("pause");
+				$.ajax({url: urlAPI + "/syncPlay", data:{ 
+					play: false
+				}, success: function(result){
+					console.log(result);
+				}});
+			});
+			}
+		
+
+
+			
+	</script>
+	</body>
+</html>
